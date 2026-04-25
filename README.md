@@ -72,3 +72,88 @@ uv sync
 
 > ⚠️ ポケモンチャンピオンズ固有のゲーム内仕様（バトルルール等）は本家ゲームとは異なる場合があります。
 > 種族値・タイプ相性などの基礎データは共通です。
+
+## Author
+
+[@kuruta_syuntaro](https://x.com/kuruta_syuntaro)
+
+---
+
+# Pokémon Champions Training Support MCP Server
+
+An MCP (Model Context Protocol) server that assists with battle training in Pokémon Champions.  
+It fetches data from PokeAPI and provides training build suggestions and party analysis.
+
+## Features (Tools)
+
+| Tool | Description |
+|------|-------------|
+| `search_pokemon` | Search base stats, types, and abilities of a Pokémon |
+| `recommend_build` | Suggest nature and EV spreads for training builds |
+| `analyze_team` | Analyze type balance and suggest improvements for a party |
+| `check_type_matchup` | Calculate type matchup multipliers |
+
+## Setup
+
+### Prerequisites
+
+- Python 3.11+
+- uv (recommended) or pip
+
+### Installation
+
+```bash
+cd mcp
+uv sync
+```
+
+## Usage
+
+### With VS Code (GitHub Copilot)
+
+Add the following to `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "pokemon-champions": {
+      "type": "stdio",
+      "command": "uv",
+      "args": ["run", "--directory", "<absolute path to this folder>", "python", "server.py"]
+    }
+  }
+}
+```
+
+### With Claude Desktop
+
+Add the following to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "pokemon-champions": {
+      "command": "uv",
+      "args": ["run", "--directory", "<absolute path to this folder>", "python", "server.py"]
+    }
+  }
+}
+```
+
+## Examples
+
+- "Show me Garchomp's base stats" → `search_pokemon("garchomp")`
+- "Suggest a build for Mimikyu" → `recommend_build("mimikyu")`
+- "Analyze a team of Garchomp, Rotom-Wash, Ferrothorn" → `analyze_team(["garchomp", "rotom-wash", "ferrothorn"])`
+- "What's the multiplier for a Fire move against Grass/Steel?" → `check_type_matchup("fire", ["grass", "steel"])`
+
+## Data Source
+
+- [PokeAPI](https://pokeapi.co/) — Pokémon stats, types, and ability data
+
+> ⚠️ Game-specific mechanics in Pokémon Champions (battle rules, etc.) may differ from the main series games.
+> Base stats and type matchups are shared.
+
+## Author
+
+[@kuruta_syuntaro](https://x.com/kuruta_syuntaro)
