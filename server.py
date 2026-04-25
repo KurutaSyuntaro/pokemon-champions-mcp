@@ -688,6 +688,229 @@ async def suggest_selection(
 
 
 # ---------------------------------------------------------------------------
+# Tool: ポケモン条件検索（タイプ＋種族値）
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def find_pokemon(
+    type1: str,
+    type2: str = "",
+    min_speed: int = 0,
+    min_attack: int = 0,
+    min_sp_attack: int = 0,
+    min_defense: int = 0,
+    min_sp_defense: int = 0,
+    min_hp: int = 0,
+    min_total: int = 0,
+) -> str:
+    """タイプや種族値の条件でポケモンを検索します。構築の候補探しに最適です。
+
+    Args:
+        type1: タイプ1（例: みず, fire）
+        type2: タイプ2（例: じめん, ground）※指定すると複合タイプ検索
+        min_speed: すばやさ下限
+        min_attack: こうげき下限
+        min_sp_attack: とくこう下限
+        min_defense: ぼうぎょ下限
+        min_sp_defense: とくぼう下限
+        min_hp: HP下限
+        min_total: 合計種族値下限
+    """
+    ja_to_en = {v: k for k, v in TYPE_JA.items()}
+
+    t1 = type1.lower().strip()
+    if t1 in ja_to_en:
+        t1 = ja_to_en[t1]
+    if t1 not in ALL_TYPES:
+        return f"「{type1}」は有効なタイプ名ではありません。"
+
+    t2 = None
+    if type2:
+        t2 = type2.lower().strip()
+        if t2 in ja_to_en:
+            t2 = ja_to_en[t2]
+        if t2 not in ALL_TYPES:
+            return f"「{type2}」は有効なタイプ名ではありません。"
+
+    # タイプ別ポケモン一覧取得
+    if t2:
+        names1, names2 = await asyncio.gather(
+            pokeapi.get_type_pokemon_names(t1),
+            pokeapi.get_type_pokemon_names(t2),
+        )
+        candidates = list(set(names1) & set(names2))
+    else:
+        candidates = await pokeapi.get_type_pokemon_names(t1)
+
+    if not candidates:
+        type_desc = f"{TYPE_JA.get(t1, t1)}/{TYPE_JA.get(t2, t2)}" if t2 else TYPE_JA.get(t1, t1)
+        return f"{type_desc}タイプのポケモンは見つかりませんでした。"
+
+    # ポケモンデータを並列取得
+    async def _fetch_safe(name: str):
+        try:
+            return name, await pokeapi.get_pokemon(name)
+        except Exception:
+            return name, None
+
+    fetched = await asyncio.gather(*(_fetch_safe(n) for n in candidates))
+
+    # 種族値フィルタ
+    matches = []
+    for name, data in fetched:
+        if data is None:
+            continue
+        stats = {s["stat"]["name"]: s["base_stat"] for s in data["stats"]}
+        total = sum(stats.values())
+        if stats.get("speed", 0) < min_speed:
+            continue
+        if stats.get("attack", 0) < min_attack:
+            continue
+        if stats.get("special-attack", 0) < min_sp_attack:
+            continue
+        if stats.get("defense", 0) < min_defense:
+            continue
+        if stats.get("special-defense", 0) < min_sp_defense:
+            continue
+        if stats.get("hp", 0) < min_hp:
+            continue
+        if total < min_total:
+            continue
+        types = [t["type"]["name"] for t in data["types"]]
+        matches.append({
+            "name": name, "id": data["id"],
+            "stats": stats, "total": total, "types": types,
+            "species_name": data["species"]["name"],
+        })
+
+    if not matches:
+        return "条件に一致するポケモンが見つかりませんでした。"
+
+    matches.sort(key=lambda x: x["total"], reverse=True)
+
+    # 日本語名取得（上位のみ）
+    display_limit = 30
+    show = matches[:display_limit]
+
+    async def _ja_name(entry):
+        try:
+            species = await pokeapi.get_species(entry["species_name"])
+            ja = await pokeapi.get_japanese_name(species)
+            if entry["name"] != entry["species_name"]:
+                suffix = entry["name"].replace(entry["species_name"], "").strip("-")
+                if suffix:
+                    ja = f"{ja}({suffix})"
+            return ja
+        except Exception:
+            return entry["name"]
+
+    ja_names = await asyncio.gather(*(_ja_name(m) for m in show))
+
+    # 出力
+    type_desc = TYPE_JA.get(t1, t1)
+    if t2:
+        type_desc += f" / {TYPE_JA.get(t2, t2)}"
+    conds = []
+    if min_speed: conds.append(f"素早≧{min_speed}")
+    if min_attack: conds.append(f"攻撃≧{min_attack}")
+    if min_sp_attack: conds.append(f"特攻≧{min_sp_attack}")
+    if min_defense: conds.append(f"防御≧{min_defense}")
+    if min_sp_defense: conds.append(f"特防≧{min_sp_defense}")
+    if min_hp: conds.append(f"HP≧{min_hp}")
+    if min_total: conds.append(f"合計≧{min_total}")
+    cond_str = f"（{', '.join(conds)}）" if conds else ""
+
+    lines = [f"## {type_desc}タイプ{cond_str} ({len(matches)}匹)", ""]
+    lines.append("| # | 名前 | タイプ | HP | 攻撃 | 防御 | 特攻 | 特防 | 素早 | 合計 |")
+    lines.append("|---|------|--------|--:|----:|----:|----:|----:|----:|----:|")
+    for m, ja in zip(show, ja_names):
+        s = m["stats"]
+        t_ja = "/".join(TYPE_JA.get(t, t) for t in m["types"])
+        lines.append(
+            f"| {m['id']} | {ja} | {t_ja} "
+            f"| {s.get('hp',0)} | {s.get('attack',0)} | {s.get('defense',0)} "
+            f"| {s.get('special-attack',0)} | {s.get('special-defense',0)} | {s.get('speed',0)} "
+            f"| {m['total']} |"
+        )
+    if len(matches) > display_limit:
+        lines.append(f"\n*他{len(matches) - display_limit}匹は省略*")
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Tool: 日本語名パターン検索
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def search_pokemon_by_name(
+    prefix: str = "",
+    suffix: str = "",
+    contains: str = "",
+) -> str:
+    """日本語名のパターンでポケモンを検索します。前方一致・後方一致・部分一致を組み合わせられます。
+
+    Args:
+        prefix: 名前の先頭文字列（例: イ）
+        suffix: 名前の末尾文字列（例: イ）
+        contains: 名前に含まれる文字列（例: ブ）
+    """
+    if not prefix and not suffix and not contains:
+        return "prefix, suffix, contains のいずれかを指定してください。"
+
+    ja_map = await pokeapi.get_ja_name_map()
+
+    # ja_map は小文字キー→IDだが、日本語カタカナは小文字変換しても同じなのでそのまま使える
+    # ただし元の表記を復元するため species を引く必要がある
+    # まずキーでフィルタリング
+    matches: list[tuple[str, int]] = []
+    for name_lower, pid in ja_map.items():
+        name = name_lower  # 日本語カタカナは .lower() しても変わらない
+        if prefix and not name.startswith(prefix.lower()):
+            continue
+        if suffix and not name.endswith(suffix.lower()):
+            continue
+        if contains and contains.lower() not in name:
+            continue
+        matches.append((name, pid))
+
+    # ID順でソート
+    matches.sort(key=lambda x: x[1])
+
+    if not matches:
+        cond = []
+        if prefix:
+            cond.append(f"「{prefix}」で始まる")
+        if suffix:
+            cond.append(f"「{suffix}」で終わる")
+        if contains:
+            cond.append(f"「{contains}」を含む")
+        return f"{'、'.join(cond)}ポケモンは見つかりませんでした。"
+
+    # ローマ字名を除外（カタカナ/ひらがなのみ残す）
+    import re
+    filtered = [(n, pid) for n, pid in matches if re.search(r'[\u3040-\u309F\u30A0-\u30FF]', n)]
+    if not filtered:
+        filtered = matches
+
+    lines = []
+    cond = []
+    if prefix:
+        cond.append(f"「{prefix}」で始まる")
+    if suffix:
+        cond.append(f"「{suffix}」で終わる")
+    if contains:
+        cond.append(f"「{contains}」を含む")
+    lines.append(f"## {'、'.join(cond)}ポケモン ({len(filtered)}匹)")
+    lines.append("")
+
+    for name, pid in filtered:
+        lines.append(f"- #{pid:04d} {name}")
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
 # エントリーポイント
 # ---------------------------------------------------------------------------
 

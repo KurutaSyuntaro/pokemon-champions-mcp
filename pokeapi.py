@@ -105,6 +105,20 @@ async def _search_by_japanese_name(ja_name: str) -> int | None:
     return _ja_name_map.get(ja_name.lower())
 
 
+async def get_ja_name_map() -> dict[str, int]:
+    """日本語名→ID のマップを取得（初回呼び出し時に構築）"""
+    global _ja_name_map
+    if _ja_name_map is None:
+        await _search_by_japanese_name("")  # キャッシュ構築のみ
+    return _ja_name_map or {}
+
+
+async def get_type_pokemon_names(type_name: str) -> list[str]:
+    """指定タイプの全ポケモン英語名を取得"""
+    data = await _get(f"type/{type_name.lower().strip()}")
+    return [entry["pokemon"]["name"] for entry in data.get("pokemon", [])]
+
+
 async def get_japanese_name(species_data: dict) -> str:
     """種族データから日本語名を取得"""
     for name_entry in species_data.get("names", []):

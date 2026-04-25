@@ -11,6 +11,9 @@ PokeAPI からデータを取得し、育成構成の提案やパーティ分析
 | `recommend_build` | 性格・努力値配分の育成提案 |
 | `analyze_team` | パーティのタイプバランス分析・改善提案 |
 | `check_type_matchup` | タイプ相性の倍率計算 |
+| `suggest_selection` | 相手パーティに対する選出提案（シングル/ダブル対応） |
+| `find_pokemon` | タイプ・種族値条件でポケモンを検索（構築の候補探しに） |
+| `search_pokemon_by_name` | 日本語名のパターン検索（前方/後方/部分一致） |
 
 ## セットアップ
 
@@ -65,6 +68,9 @@ uv sync
 - 「ミミッキュの育成構成を提案して」→ `recommend_build("mimikyu")`
 - 「ガブリアス、ロトム、ナットレイのパーティ分析」→ `analyze_team(["garchomp", "rotom-wash", "ferrothorn"])`
 - 「ほのお技でくさ/はがねに攻撃したときの倍率は？」→ `check_type_matchup("fire", ["grass", "steel"])`
+- 「相手パーティに対する選出を考えて」→ `suggest_selection(my_team, opponent_team)`
+- 「すばやさ100以上のみず/じめんタイプは？」→ `find_pokemon("みず", type2="じめん", min_speed=100)`
+- 「イで始まりイで終わるポケモンは？」→ `search_pokemon_by_name(prefix="イ", suffix="イ")`
 
 ## データソース
 
@@ -92,6 +98,9 @@ It fetches data from PokeAPI and provides training build suggestions and party a
 | `recommend_build` | Suggest nature and EV spreads for training builds |
 | `analyze_team` | Analyze type balance and suggest improvements for a party |
 | `check_type_matchup` | Calculate type matchup multipliers |
+| `suggest_selection` | Suggest team selection against opponent's party (singles/doubles) |
+| `find_pokemon` | Search Pokémon by type and base stat conditions |
+| `search_pokemon_by_name` | Search Pokémon by Japanese name pattern (prefix/suffix/contains) |
 
 ## Setup
 
@@ -146,6 +155,9 @@ Add the following to `claude_desktop_config.json`:
 - "Suggest a build for Mimikyu" → `recommend_build("mimikyu")`
 - "Analyze a team of Garchomp, Rotom-Wash, Ferrothorn" → `analyze_team(["garchomp", "rotom-wash", "ferrothorn"])`
 - "What's the multiplier for a Fire move against Grass/Steel?" → `check_type_matchup("fire", ["grass", "steel"])`
+- "Suggest picks against opponent's team" → `suggest_selection(my_team, opponent_team)`
+- "Water/Ground types with 100+ speed?" → `find_pokemon("water", type2="ground", min_speed=100)`
+- "Pokémon names starting with イ and ending with イ?" → `search_pokemon_by_name(prefix="イ", suffix="イ")`
 
 ## Data Source
 
