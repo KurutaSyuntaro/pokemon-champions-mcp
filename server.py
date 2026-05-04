@@ -123,6 +123,302 @@ async def search_pokemon(name: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Tool: 技検索
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def search_move(name: str) -> str:
+    """技の威力・命中・タイプ・分類・効果を検索します。英語名・技IDで検索できます。
+
+    Args:
+        name: 技名（例: flamethrower, thunderbolt, 85）
+    """
+    query = name.strip().lower()
+    try:
+        move_id = await pokeapi.resolve_move_id(query)
+        if move_id is None:
+            return (
+                f"「{name}」に一致する技が見つかりません。"
+                "英語技名・日本語技名・技IDで検索できます。"
+            )
+        move = await pokeapi.get_move(str(move_id))
+    except Exception:
+        return (
+            f"「{name}」に一致する技が見つかりません。"
+            "英語技名・日本語技名・技IDで検索できます。"
+        )
+
+    move_ja = await pokeapi.get_japanese_move_name(move)
+    move_en = move.get("name", query)
+    move_type = move.get("type", {}).get("name", "-")
+    move_type_ja = TYPE_JA.get(move_type, move_type)
+
+    damage_class_map = {
+        "physical": "物理",
+        "special": "特殊",
+        "status": "変化",
+    }
+    damage_class = move.get("damage_class", {}).get("name", "-")
+    damage_class_ja = damage_class_map.get(damage_class, damage_class)
+
+    power = move.get("power")
+    accuracy = move.get("accuracy")
+    pp = move.get("pp")
+    priority = move.get("priority", 0)
+    effect_chance = move.get("effect_chance")
+
+    # 効果文（日本語優先、なければ英語）
+    effect_text = ""
+    short_effect = ""
+    for entry in move.get("effect_entries", []):
+        lang = entry.get("language", {}).get("name")
+        if lang == "ja":
+            effect_text = entry.get("effect", "")
+            short_effect = entry.get("short_effect", "")
+            break
+    if not effect_text:
+        for entry in move.get("effect_entries", []):
+            if entry.get("language", {}).get("name") == "en":
+                effect_text = entry.get("effect", "")
+                short_effect = entry.get("short_effect", "")
+                break
+
+    if effect_chance is not None:
+        token = "$effect_chance"
+        if token in effect_text:
+            effect_text = effect_text.replace(token, str(effect_chance))
+        if token in short_effect:
+            short_effect = short_effect.replace(token, str(effect_chance))
+
+    learned_by = move.get("learned_by_pokemon", [])
+    learned_samples = [p.get("name", "") for p in learned_by[:8] if p.get("name")]
+
+    lines = [
+        f"## {move_ja} (#{move.get('id', '-')})",
+        f"英語名: {move_en}",
+        f"タイプ: {move_type_ja}",
+        f"分類: {damage_class_ja}",
+        "",
+        "### 基本データ",
+        f"- 威力: {power if power is not None else '-'}",
+        f"- 命中: {accuracy if accuracy is not None else '-'}",
+        f"- PP: {pp if pp is not None else '-'}",
+        f"- 優先度: {priority}",
+    ]
+
+    if short_effect:
+        lines.extend(["", "### 効果（要約）", f"- {short_effect}"])
+    if effect_text and effect_text != short_effect:
+        lines.extend(["", "### 効果（詳細）", f"- {effect_text}"])
+
+    if learned_samples:
+        lines.extend(
+            [
+                "",
+                f"### 習得ポケモン例 ({len(learned_by)}匹中 上位{len(learned_samples)}件)",
+                f"- {', '.join(learned_samples)}",
+            ]
+        )
+
+    return "\n".join(lines)
+
+
+_LEARN_METHOD_JA = {
+    "level-up": "レベルアップ",
+    "machine": "わざマシン",
+    "egg": "タマゴ",
+    "tutor": "教え技",
+    "form-change": "フォルム変化",
+    "stadium-surfing-pikachu": "特殊配布",
+    "light-ball-egg": "特殊タマゴ",
+    "zygarde-cube": "ジガルデキューブ",
+}
+
+
+def _extract_id_from_url(url: str) -> int | None:
+    """PokeAPI の URL 末尾から ID を抽出"""
+    if not url:
+        return None
+    trimmed = url.rstrip("/")
+    tail = trimmed.split("/")[-1]
+    return int(tail) if tail.isdigit() else None
+
+
+def _format_learn_methods(details: list[dict]) -> list[str]:
+    """version_group_details を習得方法の要約文字列に変換"""
+    methods: dict[str, int] = {}
+    for d in details:
+        method = d.get("move_learn_method", {}).get("name", "unknown")
+        level = d.get("level_learned_at", 0)
+        if method == "level-up":
+            methods[method] = max(methods.get(method, 0), level)
+        else:
+            methods.setdefault(method, 0)
+
+    order = {
+        "level-up": 0,
+        "machine": 1,
+        "tutor": 2,
+        "egg": 3,
+    }
+
+    labels = []
+    for method, level in sorted(methods.items(), key=lambda item: order.get(item[0], 99)):
+        method_ja = _LEARN_METHOD_JA.get(method, method)
+        if method == "level-up" and level > 0:
+            labels.append(f"{method_ja}(Lv{level})")
+        else:
+            labels.append(method_ja)
+    return labels
+
+
+def _find_move_entry_in_pokemon(pokemon: dict, move_name_en: str, move_id: int) -> dict | None:
+    """pokemon.moves から対象技のエントリを見つける"""
+    for m in pokemon.get("moves", []):
+        cand_name = m.get("move", {}).get("name")
+        cand_id = _extract_id_from_url(m.get("move", {}).get("url", ""))
+        if cand_name == move_name_en or cand_id == move_id:
+            return m
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Tool: 技を覚えるポケモン検索
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def search_pokemon_by_move(name: str, limit: int = 30) -> str:
+    """指定した技を覚えるポケモンを習得方法付きで検索します。
+
+    Args:
+        name: 技名（例: flamethrower, かえんほうしゃ, 53）
+        limit: 詳細表示する件数（1〜100）
+    """
+    query = name.strip().lower()
+    show_limit = max(1, min(limit, 100))
+
+    try:
+        move_id = await pokeapi.resolve_move_id(query)
+        if move_id is None:
+            return (
+                f"「{name}」に一致する技が見つかりません。"
+                "英語技名・日本語技名・技IDで検索できます。"
+            )
+        move = await pokeapi.get_move(str(move_id))
+    except Exception:
+        return (
+            f"「{name}」に一致する技が見つかりません。"
+            "英語技名・日本語技名・技IDで検索できます。"
+        )
+
+    move_ja = await pokeapi.get_japanese_move_name(move)
+    move_en = move.get("name", query)
+    learned_by = move.get("learned_by_pokemon", [])
+    if not learned_by:
+        return f"{move_ja} を覚えるポケモンは見つかりませんでした。"
+
+    targets = learned_by[:show_limit]
+    sem = asyncio.Semaphore(12)
+
+    async def _resolve_learner(entry: dict) -> tuple[str, str, list[str]] | None:
+        en_name = entry.get("name", "")
+        pid = _extract_id_from_url(entry.get("url", ""))
+        if pid is None and en_name:
+            pid = await pokeapi.resolve_pokemon_id(en_name)
+        if pid is None:
+            return None
+
+        async with sem:
+            try:
+                pokemon, species = await pokeapi.get_pokemon_and_species(str(pid))
+                ja_name = await pokeapi.get_japanese_name(species)
+                move_entry = _find_move_entry_in_pokemon(pokemon, move_en, move_id)
+                method_labels = _format_learn_methods(move_entry.get("version_group_details", [])) if move_entry else ["不明"]
+                return ja_name, en_name, method_labels
+            except Exception:
+                return None
+
+    resolved = await asyncio.gather(*(_resolve_learner(e) for e in targets))
+    learners = [r for r in resolved if r is not None]
+
+    lines = [
+        f"## {move_ja} を覚えるポケモン",
+        f"技ID: #{move_id}",
+        f"該当数: {len(learned_by)}匹（詳細表示: {len(learners)}件）",
+        "",
+        "### 習得ポケモン（習得方法付き）",
+    ]
+
+    for ja_name, en_name, methods in learners:
+        lines.append(f"- {ja_name} ({en_name}): {', '.join(methods)}")
+
+    if len(learned_by) > show_limit:
+        lines.extend([
+            "",
+            f"※ 件数が多いため上位{show_limit}件のみ詳細表示しています。",
+        ])
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Tool: ポケモンが覚える技検索
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def search_moves_by_pokemon(name: str, limit: int = 120) -> str:
+    """指定したポケモンが覚える技を習得方法付きで検索します。
+
+    Args:
+        name: ポケモン名（例: pikachu, ピカチュウ, 25）
+        limit: 表示件数（1〜300）
+    """
+    show_limit = max(1, min(limit, 300))
+
+    try:
+        pokemon, species, ja_name = await _fetch_pokemon_full(name)
+    except ValueError as e:
+        return str(e)
+
+    move_name_map = await pokeapi.get_japanese_move_name_map()
+
+    rows: list[tuple[str, str, list[str]]] = []
+    for m in pokemon.get("moves", []):
+        move_en = m.get("move", {}).get("name", "")
+        move_id = _extract_id_from_url(m.get("move", {}).get("url", ""))
+        move_ja = move_name_map.get(move_id, move_en)
+        methods = _format_learn_methods(m.get("version_group_details", []))
+        if not methods:
+            methods = ["不明"]
+        rows.append((move_ja, move_en, methods))
+
+    if not rows:
+        return f"{ja_name} が覚える技データが見つかりませんでした。"
+
+    rows.sort(key=lambda x: x[0])
+    show_rows = rows[:show_limit]
+
+    lines = [
+        f"## {ja_name} が覚える技一覧",
+        f"ポケモンID: #{pokemon.get('id', '-')}",
+        f"技数: {len(rows)}（表示: {len(show_rows)}件）",
+        "",
+        "### 技（習得方法付き）",
+    ]
+
+    for move_ja, move_en, methods in show_rows:
+        lines.append(f"- {move_ja} ({move_en}): {', '.join(methods)}")
+
+    if len(rows) > show_limit:
+        lines.extend([
+            "",
+            f"※ 件数が多いため先頭{show_limit}件のみ表示しています。",
+        ])
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
 # Tool: 育成構成提案
 # ---------------------------------------------------------------------------
 

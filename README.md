@@ -8,6 +8,9 @@ PokeAPI からデータを取得し、育成構成の提案やパーティ分析
 | ツール | 説明 |
 |--------|------|
 | `search_pokemon` | ポケモンの種族値・タイプ・特性を検索 |
+| `search_move` | 技の威力・命中・タイプ・分類・効果を検索（英語名・日本語名・技ID対応） |
+| `search_pokemon_by_move` | 指定した技を覚えるポケモンを習得方法付きで検索 |
+| `search_moves_by_pokemon` | 指定したポケモンが覚える技を習得方法付きで検索 |
 | `recommend_build` | 性格・努力値配分の育成提案 |
 | `analyze_team` | パーティのタイプバランス分析・改善提案 |
 | `check_type_matchup` | タイプ相性の倍率計算 |
@@ -65,6 +68,9 @@ uv sync
 ## 使用例
 
 - 「ガブリアスの種族値を教えて」→ `search_pokemon("garchomp")`
+- 「かえんほうしゃの性能を知りたい」→ `search_move("かえんほうしゃ")`
+- 「かえんほうしゃを覚えるポケモンを教えて」→ `search_pokemon_by_move("かえんほうしゃ")`
+- 「ピカチュウが覚える技を教えて」→ `search_moves_by_pokemon("ピカチュウ")`
 - 「ミミッキュの育成構成を提案して」→ `recommend_build("mimikyu")`
 - 「ガブリアス、ロトム、ナットレイのパーティ分析」→ `analyze_team(["garchomp", "rotom-wash", "ferrothorn"])`
 - 「ほのお技でくさ/はがねに攻撃したときの倍率は？」→ `check_type_matchup("fire", ["grass", "steel"])`
@@ -95,6 +101,9 @@ It fetches data from PokeAPI and provides training build suggestions and party a
 | Tool | Description |
 |------|-------------|
 | `search_pokemon` | Search base stats, types, and abilities of a Pokémon |
+| `search_move` | Search move power, accuracy, type, class, and effects (English/Japanese name and ID) |
+| `search_pokemon_by_move` | Search Pokémon that can learn a move, including learn methods |
+| `search_moves_by_pokemon` | Search moves a Pokémon can learn, including learn methods |
 | `recommend_build` | Suggest nature and EV spreads for training builds |
 | `analyze_team` | Analyze type balance and suggest improvements for a party |
 | `check_type_matchup` | Calculate type matchup multipliers |
@@ -152,6 +161,9 @@ Add the following to `claude_desktop_config.json`:
 ## Examples
 
 - "Show me Garchomp's base stats" → `search_pokemon("garchomp")`
+- "Show me Flamethrower's details" → `search_move("flamethrower")`
+- "Which Pokémon can learn Flamethrower?" → `search_pokemon_by_move("flamethrower")`
+- "Which moves can Pikachu learn?" → `search_moves_by_pokemon("pikachu")`
 - "Suggest a build for Mimikyu" → `recommend_build("mimikyu")`
 - "Analyze a team of Garchomp, Rotom-Wash, Ferrothorn" → `analyze_team(["garchomp", "rotom-wash", "ferrothorn"])`
 - "What's the multiplier for a Fire move against Grass/Steel?" → `check_type_matchup("fire", ["grass", "steel"])`
